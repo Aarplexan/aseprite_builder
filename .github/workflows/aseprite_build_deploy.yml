@@ -104,14 +104,23 @@ jobs:
             ..
             
           ninja aseprite
+          
+      - name: Copy OpenSSL DLLs
+        shell: cmd
+        run: |
+          :: On cherche où sont les DLL OpenSSL sur l'agent GitHub
+          xcopy "C:\Program Files\OpenSSL\bin\libcrypto-3-x64.dll" aseprite\build\bin\ /y
+          xcopy "C:\Program Files\OpenSSL\bin\libssl-3-x64.dll" aseprite\build\bin\ /y
 
       - name: Package
         working-directory: aseprite/build/bin
         shell: bash
         run: |
           echo "# portable" > aseprite.ini
+          # On vérifie que les DLL sont là (optionnel mais recommandé pour les logs)
+          ls -lh libcrypto-3-x64.dll libssl-3-x64.dll
           7z a "${GITHUB_WORKSPACE}/Aseprite-${{ needs.check-version.outputs.latest_tag }}-Windows.zip" *
-
+          
       - name: Create Release and Upload
         uses: softprops/action-gh-release@v2
         with:
