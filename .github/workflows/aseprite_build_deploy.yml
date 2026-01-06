@@ -1,5 +1,8 @@
 name: Build and deploy Aseprite
 
+permissions:
+  contents: write
+
 on:
   schedule:
     - cron: '0 0 * * *'
