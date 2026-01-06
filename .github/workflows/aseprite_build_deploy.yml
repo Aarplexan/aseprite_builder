@@ -65,31 +65,29 @@ jobs:
           unzip ninja.zip -d ninja
           echo "${GITHUB_WORKSPACE}/ninja" >> $GITHUB_PATH
 
-      # --- MISE A JOUR CRITIQUE : SKIA m124 ---
+      # --- SKIA m124 (URL OFFICIELLE VÉRIFIÉE) ---
       - name: Get Skia from cache
         id: skia-cache
         uses: actions/cache@v4
         with:
           path: skia
-          key: skia-m124-windows-v1
+          key: skia-m124-08a5439a6b-v1 # Clé mise à jour avec le bon tag
 
       - name: Download Skia m124 if not in cache
         if: steps.skia-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          # URL officielle pour la branche m124 requise par la doc
-          curl -L -o Skia-Windows-Release-x64.zip https://github.com/aseprite/skia/releases/download/m124-8a4362153a/Skia-Windows-Release-x64.zip
+          # Utilisation du tag exact : m124-08a5439a6b
+          curl -L -o Skia-Windows-Release-x64.zip https://github.com/aseprite/skia/releases/download/m124-08a5439a6b/Skia-Windows-Release-x64.zip
           unzip Skia-Windows-Release-x64.zip -d skia
 
-      # Patch nécessaire car le ZIP de Skia ne contient pas l'arborescence complète attendue par CMake
       - name: Fix Skia directory structure
         shell: bash
         run: |
           mkdir -p skia/third_party/externals/icu/flutter
           mkdir -p skia/third_party/externals/libjpeg-turbo
-          # On déplace icudtl.dat là où CMake le cherche
           cp skia/out/Release-x64/icudtl.dat skia/third_party/externals/icu/flutter/icudtl.dat
-          echo "Structure Skia corrigée pour m124."
+          echo "Structure Skia m124 corrigée avec succès."
 
       - name: Clone Aseprite Repository
         shell: bash
