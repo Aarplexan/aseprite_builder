@@ -13,6 +13,8 @@ on:
 
 env:
   BUILD_TYPE: Release
+  # Version de Skia recommandée pour Aseprite actuellement
+  SKIA_VERSION: m124-08a5439a6b 
 
 jobs:
   check-version:
@@ -21,30 +23,36 @@ jobs:
     outputs:
       latest_tag: ${{ steps.version_info.outputs.latest_tag }}
       should_build: ${{ steps.should_build.outputs.should_build }}
-
+    
     steps:
-      - name: Get latest version info
+      - name: Get latest upstream version info
         id: version_info
         run: |
           data=$(curl -sL https://api.github.com/repos/aseprite/aseprite/releases/latest)
           latest_tag=$(echo "$data" | jq -r '.tag_name')
           echo "latest_tag=$latest_tag" >> $GITHUB_OUTPUT
+          echo "Detected upstream version: $latest_tag"
 
-      - name: Check if version is already built
-        id: version_check
-        uses: actions/cache@v4
-        with:
-          path: version.txt
-          key: aseprite-v1-${{ steps.version_info.outputs.latest_tag }}
-
-      - name: Should we start new build?
+      - name: Check if release exists in this repo
         id: should_build
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ "${{ steps.version_check.outputs.cache-hit }}" != "true" ] || [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "should_build=true" >> $GITHUB_OUTPUT
-            echo "${{ steps.version_info.outputs.latest_tag }}" > version.txt
-          else
+          LATEST_TAG="${{ steps.version_info.outputs.latest_tag }}"
+          
+          # On vérifie si la release existe déjà chez nous via la CLI GitHub
+          if gh release view "$LATEST_TAG" --repo ${{ github.repository }} > /dev/null 2>&1; then
+            echo "Version $LATEST_TAG already exists."
             echo "should_build=false" >> $GITHUB_OUTPUT
+          else
+            echo "Version $LATEST_TAG not found. Starting build."
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          fi
+          
+          # Force le build si lancé manuellement
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+             echo "Manual trigger: Forcing build."
+             echo "should_build=true" >> $GITHUB_OUTPUT
           fi
 
   build-aseprite:
@@ -57,10 +65,16 @@ jobs:
       - name: Checkout Action
         uses: actions/checkout@v4
 
+      # Utilisation d'une action dédiée pour configurer l'environnement MSVC (plus robuste que le chemin en dur)
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
       - name: Install Ninja
         shell: bash
         run: |
-          curl -L -o ninja.zip https://github.com/ninja-build/ninja/releases/download/v1.11.1/ninja-win.zip
+          curl -L -o ninja.zip https://github.com/ninja-build/ninja/releases/download/v1.12.1/ninja-win.zip
           unzip ninja.zip -d ninja
           echo "${GITHUB_WORKSPACE}/ninja" >> $GITHUB_PATH
 
@@ -69,14 +83,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: skia
-          key: skia-m124-08a5439a6b-v1
+          key: skia-${{ env.SKIA_VERSION }}-windows-x64
 
-      - name: Download Skia m124 if not in cache
+      - name: Download Skia if not in cache
         if: steps.skia-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          curl -L -o Skia-Windows-Release-x64.zip https://github.com/aseprite/skia/releases/download/m124-08a5439a6b/Skia-Windows-Release-x64.zip
-          unzip Skia-Windows-Release-x64.zip -d skia
+          curl -L -o Skia.zip https://github.com/aseprite/skia/releases/download/${{ env.SKIA_VERSION }}/Skia-Windows-Release-x64.zip
+          unzip Skia.zip -d skia
 
       - name: Clone Aseprite Repository
         shell: bash
@@ -88,9 +102,8 @@ jobs:
         shell: cmd
         working-directory: aseprite/build
         run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=x64
           cmake -G Ninja ^
-            -DCMAKE_BUILD_TYPE=Release ^
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} ^
             -DLAF_BACKEND=skia ^
             -DSKIA_DIR="%GITHUB_WORKSPACE%/skia" ^
             -DSKIA_LIBRARY_DIR="%GITHUB_WORKSPACE%/skia/out/Release-x64" ^
@@ -100,11 +113,19 @@ jobs:
             ..
           ninja aseprite
 
+      # Note : Le chemin OpenSSL peut changer selon l'image runner.
+      # L'image windows-latest (2022) a généralement OpenSSL préinstallé via Chocolatey ou Git.
+      # Une méthode plus sûre est de chercher le fichier, mais le chemin hardcodé reste le plus simple si l'image ne bouge pas trop.
       - name: Copy OpenSSL DLLs
         shell: cmd
         run: |
-          xcopy "C:\Program Files\OpenSSL\bin\libcrypto-3-x64.dll" aseprite\build\bin\ /y
-          xcopy "C:\Program Files\OpenSSL\bin\libssl-3-x64.dll" aseprite\build\bin\ /y
+          if exist "C:\Program Files\OpenSSL\bin\libcrypto-3-x64.dll" (
+            xcopy "C:\Program Files\OpenSSL\bin\libcrypto-3-x64.dll" aseprite\build\bin\ /y
+            xcopy "C:\Program Files\OpenSSL\bin\libssl-3-x64.dll" aseprite\build\bin\ /y
+          ) else (
+            echo "OpenSSL not found at expected path. Trying generic search..."
+            where /r "C:\Program Files" libcrypto-3-x64.dll
+          )
 
       - name: Package
         working-directory: aseprite/build/bin
@@ -125,13 +146,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Notify Discord
-        if: always()
+        if: always() && github.event_name != 'pull_request'
         continue-on-error: true
         uses: sarisia/actions-status-discord@v1
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK }}
           status: ${{ job.status }}
           title: "Build Aseprite ${{ needs.check-version.outputs.latest_tag }}"
-          description: "Le build Windows est terminé."
+          description: "Build status: ${{ job.status }}"
           color: ${{ job.status == 'success' && '0x00ff00' || '0xff0000' }}
-          username: "GitHub Actions"
+          username: "Aseprite Builder"
