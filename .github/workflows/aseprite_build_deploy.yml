@@ -65,7 +65,6 @@ jobs:
           unzip ninja.zip -d ninja
           echo "${GITHUB_WORKSPACE}/ninja" >> $GITHUB_PATH
 
-      # --- MISE A JOUR DE SKIA (m81 -> m102) ---
       - name: Get Skia from cache
         id: skia-cache
         uses: actions/cache@v4
@@ -77,9 +76,22 @@ jobs:
         if: steps.skia-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          # URL mise à jour vers m102 (obligatoire pour Aseprite v1.3+)
           curl -L -o Skia-Windows-Release-x64.zip https://github.com/aseprite/skia/releases/download/m102-861e4743af/Skia-Windows-Release-x64.zip
           unzip Skia-Windows-Release-x64.zip -d skia
+
+      # --- ETAPE CRITIQUE AJOUTÉE ---
+      - name: Fix Skia directory structure
+        shell: bash
+        run: |
+          # Aseprite cherche icudtl.dat dans third_party, mais le zip le met dans out/Release-x64
+          # On crée les dossiers manquants pour tromper CMake
+          mkdir -p skia/third_party/externals/icu/flutter
+          mkdir -p skia/third_party/externals/libjpeg-turbo
+          
+          # On copie le fichier requis au bon endroit
+          cp skia/out/Release-x64/icudtl.dat skia/third_party/externals/icu/flutter/icudtl.dat
+          
+          echo "Structure Skia corrigée."
 
       - name: Clone Aseprite Repository
         shell: bash
@@ -100,7 +112,6 @@ jobs:
             -DSKIA_LIBRARY_DIR="%GITHUB_WORKSPACE%/skia/out/Release-x64" ^
             -DSKIA_LIBRARY="%GITHUB_WORKSPACE%/skia/out/Release-x64/skia.lib" ^
             -DSKIA_OPENGL_LIBRARY="" ^
-            -DUSE_SHARED_EXT=OFF ^
             ..
             
           ninja aseprite
