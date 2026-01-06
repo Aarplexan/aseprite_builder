@@ -65,37 +65,36 @@ jobs:
           unzip ninja.zip -d ninja
           echo "${GITHUB_WORKSPACE}/ninja" >> $GITHUB_PATH
 
+      # --- MISE A JOUR CRITIQUE : SKIA m124 ---
       - name: Get Skia from cache
         id: skia-cache
         uses: actions/cache@v4
         with:
           path: skia
-          key: skia-m102-windows-v1
+          key: skia-m124-windows-v1
 
-      - name: Download Skia m102 if not in cache
+      - name: Download Skia m124 if not in cache
         if: steps.skia-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          curl -L -o Skia-Windows-Release-x64.zip https://github.com/aseprite/skia/releases/download/m102-861e4743af/Skia-Windows-Release-x64.zip
+          # URL officielle pour la branche m124 requise par la doc
+          curl -L -o Skia-Windows-Release-x64.zip https://github.com/aseprite/skia/releases/download/m124-8a4362153a/Skia-Windows-Release-x64.zip
           unzip Skia-Windows-Release-x64.zip -d skia
 
-      # --- ETAPE CRITIQUE AJOUTÉE ---
+      # Patch nécessaire car le ZIP de Skia ne contient pas l'arborescence complète attendue par CMake
       - name: Fix Skia directory structure
         shell: bash
         run: |
-          # Aseprite cherche icudtl.dat dans third_party, mais le zip le met dans out/Release-x64
-          # On crée les dossiers manquants pour tromper CMake
           mkdir -p skia/third_party/externals/icu/flutter
           mkdir -p skia/third_party/externals/libjpeg-turbo
-          
-          # On copie le fichier requis au bon endroit
+          # On déplace icudtl.dat là où CMake le cherche
           cp skia/out/Release-x64/icudtl.dat skia/third_party/externals/icu/flutter/icudtl.dat
-          
-          echo "Structure Skia corrigée."
+          echo "Structure Skia corrigée pour m124."
 
       - name: Clone Aseprite Repository
         shell: bash
         run: |
+          # --recursive est indispensable selon la doc
           git clone --recursive --branch ${{ needs.check-version.outputs.latest_tag }} https://github.com/aseprite/aseprite.git aseprite
           mkdir -p aseprite/build
 
