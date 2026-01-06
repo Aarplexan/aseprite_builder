@@ -81,14 +81,6 @@ jobs:
           curl -L -o Skia-Windows-Release-x64.zip https://github.com/aseprite/skia/releases/download/m124-08a5439a6b/Skia-Windows-Release-x64.zip
           unzip Skia-Windows-Release-x64.zip -d skia
 
-      - name: Fix Skia directory structure
-        shell: bash
-        run: |
-          mkdir -p skia/third_party/externals/icu/flutter
-          mkdir -p skia/third_party/externals/libjpeg-turbo
-          cp skia/out/Release-x64/icudtl.dat skia/third_party/externals/icu/flutter/icudtl.dat
-          echo "Structure Skia m124 corrigée avec succès."
-
       - name: Clone Aseprite Repository
         shell: bash
         run: |
