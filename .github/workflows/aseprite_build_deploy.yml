@@ -34,17 +34,15 @@ jobs:
         uses: actions/cache@v4
         with:
           path: version.txt
-          key: aseprite-v2-${{ steps.version_info.outputs.latest_tag }}
+          key: aseprite-v1-${{ steps.version_info.outputs.latest_tag }}
 
       - name: Should we start new build?
         id: should_build
         run: |
           if [ "${{ steps.version_check.outputs.cache-hit }}" != "true" ]; then
-            echo "New version detected or cache expired. Starting build."
             echo "should_build=true" >> $GITHUB_OUTPUT
             echo "${{ steps.version_info.outputs.latest_tag }}" > version.txt
           else
-            echo "Version already built. Skipping."
             echo "should_build=false" >> $GITHUB_OUTPUT
           fi
 
@@ -65,26 +63,23 @@ jobs:
           unzip ninja.zip -d ninja
           echo "${GITHUB_WORKSPACE}/ninja" >> $GITHUB_PATH
 
-      # --- SKIA m124 (URL OFFICIELLE VÉRIFIÉE) ---
       - name: Get Skia from cache
         id: skia-cache
         uses: actions/cache@v4
         with:
           path: skia
-          key: skia-m124-08a5439a6b-v1 # Clé mise à jour avec le bon tag
+          key: skia-m124-08a5439a6b-v1
 
       - name: Download Skia m124 if not in cache
         if: steps.skia-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          # Utilisation du tag exact : m124-08a5439a6b
           curl -L -o Skia-Windows-Release-x64.zip https://github.com/aseprite/skia/releases/download/m124-08a5439a6b/Skia-Windows-Release-x64.zip
           unzip Skia-Windows-Release-x64.zip -d skia
 
       - name: Clone Aseprite Repository
         shell: bash
         run: |
-          # --recursive est indispensable selon la doc
           git clone --recursive --branch ${{ needs.check-version.outputs.latest_tag }} https://github.com/aseprite/aseprite.git aseprite
           mkdir -p aseprite/build
 
@@ -93,7 +88,6 @@ jobs:
         working-directory: aseprite/build
         run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=x64
-          
           cmake -G Ninja ^
             -DCMAKE_BUILD_TYPE=Release ^
             -DLAF_BACKEND=skia ^
@@ -101,14 +95,13 @@ jobs:
             -DSKIA_LIBRARY_DIR="%GITHUB_WORKSPACE%/skia/out/Release-x64" ^
             -DSKIA_LIBRARY="%GITHUB_WORKSPACE%/skia/out/Release-x64/skia.lib" ^
             -DOPENGL_LIBRARY="opengl32" ^
+            -DCUSTOM_VERSION="${{ needs.check-version.outputs.latest_tag }}" ^
             ..
-            
           ninja aseprite
-          
+
       - name: Copy OpenSSL DLLs
         shell: cmd
         run: |
-          :: On cherche où sont les DLL OpenSSL sur l'agent GitHub
           xcopy "C:\Program Files\OpenSSL\bin\libcrypto-3-x64.dll" aseprite\build\bin\ /y
           xcopy "C:\Program Files\OpenSSL\bin\libssl-3-x64.dll" aseprite\build\bin\ /y
 
@@ -117,10 +110,8 @@ jobs:
         shell: bash
         run: |
           echo "# portable" > aseprite.ini
-          # On vérifie que les DLL sont là (optionnel mais recommandé pour les logs)
-          ls -lh libcrypto-3-x64.dll libssl-3-x64.dll
           7z a "${GITHUB_WORKSPACE}/Aseprite-${{ needs.check-version.outputs.latest_tag }}-Windows.zip" *
-          
+
       - name: Create Release and Upload
         uses: softprops/action-gh-release@v2
         with:
@@ -133,7 +124,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Notify Discord
-        if: always()
+        if: always() && secrets.DISCORD_WEBHOOK != ''
         uses: sarisia/actions-status-discord@v1
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK }}
