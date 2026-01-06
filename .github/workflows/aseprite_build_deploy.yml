@@ -9,6 +9,7 @@ on:
   push:
     branches:
       - master
+  workflow_dispatch:
 
 env:
   BUILD_TYPE: Release
@@ -39,7 +40,7 @@ jobs:
       - name: Should we start new build?
         id: should_build
         run: |
-          if [ "${{ steps.version_check.outputs.cache-hit }}" != "true" ]; then
+          if [ "${{ steps.version_check.outputs.cache-hit }}" != "true" ] || [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             echo "should_build=true" >> $GITHUB_OUTPUT
             echo "${{ steps.version_info.outputs.latest_tag }}" > version.txt
           else
@@ -124,7 +125,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Notify Discord
-        if: always() && secrets.DISCORD_WEBHOOK != ''
+        if: always()
+        continue-on-error: true
         uses: sarisia/actions-status-discord@v1
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK }}
