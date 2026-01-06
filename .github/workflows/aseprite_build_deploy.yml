@@ -34,7 +34,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: version.txt
-          key: aseprite-v1-${{ steps.version_info.outputs.latest_tag }}
+          key: aseprite-v2-${{ steps.version_info.outputs.latest_tag }}
 
       - name: Should we start new build?
         id: should_build
