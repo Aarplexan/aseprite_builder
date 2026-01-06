@@ -18,7 +18,6 @@ jobs:
     name: Check latest Aseprite release
     runs-on: ubuntu-latest
     outputs:
-      download_url: ${{ steps.version_info.outputs.download_url }}
       latest_tag: ${{ steps.version_info.outputs.latest_tag }}
       should_build: ${{ steps.should_build.outputs.should_build }}
 
@@ -28,18 +27,13 @@ jobs:
         run: |
           data=$(curl -sL https://api.github.com/repos/aseprite/aseprite/releases/latest)
           latest_tag=$(echo "$data" | jq -r '.tag_name')
-          # On récupère l'URL du code source (tar.gz ou zip) pour compiler
-          download_url="https://github.com/aseprite/aseprite/archive/refs/tags/${latest_tag}.zip"
-          
           echo "latest_tag=$latest_tag" >> $GITHUB_OUTPUT
-          echo "download_url=$download_url" >> $GITHUB_OUTPUT
 
       - name: Check if version is already built
         id: version_check
         uses: actions/cache@v4
         with:
           path: version.txt
-          # La clé est unique à chaque version
           key: aseprite-v1-${{ steps.version_info.outputs.latest_tag }}
 
       - name: Should we start new build?
@@ -61,7 +55,7 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout Action
         uses: actions/checkout@v4
 
       - name: Install Ninja
@@ -71,12 +65,13 @@ jobs:
           unzip ninja.zip -d ninja
           echo "${GITHUB_WORKSPACE}/ninja" >> $GITHUB_PATH
 
+      # Utilisation du cache pour Skia pour gagner du temps
       - name: Get Skia from cache
         id: skia-cache
         uses: actions/cache@v4
         with:
           path: skia
-          key: skia-m81-windows-v2 # Clé versionnée pour forcer refresh si besoin
+          key: skia-m81-windows-v3
 
       - name: Download Skia if not in cache
         if: steps.skia-cache.outputs.cache-hit != 'true'
@@ -85,13 +80,11 @@ jobs:
           curl -L -o Skia-Windows-Release-x64.zip https://github.com/aseprite/skia/releases/download/m81-b607b32047/Skia-Windows-Release-x64.zip
           unzip Skia-Windows-Release-x64.zip -d skia
 
-      - name: Download Aseprite source
+      # CORRECTION MAJEURE ICI : Utilisation de GIT au lieu de UNZIP
+      - name: Clone Aseprite Repository
         shell: bash
         run: |
-          curl -L -o Aseprite-source.zip ${{ needs.check-version.outputs.download_url }}
-          unzip Aseprite-source.zip -d aseprite_src
-          # Le dossier dézippé contient souvent un sous-dossier nommé aseprite-1.x.x
-          mv aseprite_src/aseprite-* aseprite || true
+          git clone --recursive --branch ${{ needs.check-version.outputs.latest_tag }} https://github.com/aseprite/aseprite.git aseprite
           mkdir -p aseprite/build
 
       - name: Build (Windows)
@@ -99,13 +92,16 @@ jobs:
         working-directory: aseprite/build
         run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=x64
+          
           cmake -G Ninja ^
             -DCMAKE_BUILD_TYPE=Release ^
             -DLAF_BACKEND=skia ^
             -DSKIA_DIR="%GITHUB_WORKSPACE%/skia" ^
             -DSKIA_LIBRARY_DIR="%GITHUB_WORKSPACE%/skia/out/Release-x64" ^
             -DSKIA_OUT_DIR="%GITHUB_WORKSPACE%/skia/out/Release-x64" ^
+            -DUSE_SHARED_EXT=OFF ^
             ..
+            
           ninja aseprite
 
       - name: Package
@@ -125,13 +121,14 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Notify Discord
-        if: always() # S'exécute même si le build échoue
+        if: always()
         uses: sarisia/actions-status-discord@v1
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK }}
           status: ${{ job.status }}
           title: "Build Aseprite ${{ needs.check-version.outputs.latest_tag }}"
-          description: "Le build pour Windows est terminé."
+          description: "Le build Windows est terminé."
           color: ${{ job.status == 'success' && '0x00ff00' || '0xff0000' }}
           username: "GitHub Actions"
