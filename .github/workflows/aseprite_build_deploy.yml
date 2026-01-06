@@ -100,7 +100,7 @@ jobs:
             -DSKIA_DIR="%GITHUB_WORKSPACE%/skia" ^
             -DSKIA_LIBRARY_DIR="%GITHUB_WORKSPACE%/skia/out/Release-x64" ^
             -DSKIA_LIBRARY="%GITHUB_WORKSPACE%/skia/out/Release-x64/skia.lib" ^
-            -DSKIA_OPENGL_LIBRARY="" ^
+            -DOPENGL_LIBRARY="opengl32" ^
             ..
             
           ninja aseprite
