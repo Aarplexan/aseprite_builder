@@ -65,22 +65,22 @@ jobs:
           unzip ninja.zip -d ninja
           echo "${GITHUB_WORKSPACE}/ninja" >> $GITHUB_PATH
 
-      # Utilisation du cache pour Skia pour gagner du temps
+      # --- MISE A JOUR DE SKIA (m81 -> m102) ---
       - name: Get Skia from cache
         id: skia-cache
         uses: actions/cache@v4
         with:
           path: skia
-          key: skia-m81-windows-v3
+          key: skia-m102-windows-v1
 
-      - name: Download Skia if not in cache
+      - name: Download Skia m102 if not in cache
         if: steps.skia-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          curl -L -o Skia-Windows-Release-x64.zip https://github.com/aseprite/skia/releases/download/m81-b607b32047/Skia-Windows-Release-x64.zip
+          # URL mise à jour vers m102 (obligatoire pour Aseprite v1.3+)
+          curl -L -o Skia-Windows-Release-x64.zip https://github.com/aseprite/skia/releases/download/m102-861e4743af/Skia-Windows-Release-x64.zip
           unzip Skia-Windows-Release-x64.zip -d skia
 
-      # CORRECTION MAJEURE ICI : Utilisation de GIT au lieu de UNZIP
       - name: Clone Aseprite Repository
         shell: bash
         run: |
@@ -98,7 +98,8 @@ jobs:
             -DLAF_BACKEND=skia ^
             -DSKIA_DIR="%GITHUB_WORKSPACE%/skia" ^
             -DSKIA_LIBRARY_DIR="%GITHUB_WORKSPACE%/skia/out/Release-x64" ^
-            -DSKIA_OUT_DIR="%GITHUB_WORKSPACE%/skia/out/Release-x64" ^
+            -DSKIA_LIBRARY="%GITHUB_WORKSPACE%/skia/out/Release-x64/skia.lib" ^
+            -DSKIA_OPENGL_LIBRARY="" ^
             -DUSE_SHARED_EXT=OFF ^
             ..
             
