@@ -1,21 +1,26 @@
 name: Build and deploy Aseprite
+
 permissions:
   contents: write
+
 on:
   schedule:
-    - cron: 0 0 * * *
+    - cron: '0 0 * * *'
   push:
     branches:
       - master
-  workflow_dispatch: null
+  workflow_dispatch:
+
 concurrency:
   group: build-aseprite
   cancel-in-progress: false
+
 env:
   BUILD_TYPE: Release
   SKIA_VERSION: m124-08a5439a6b
   NINJA_VERSION: 1.12.1
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   check-version:
     name: Check latest Aseprite release
@@ -24,162 +29,160 @@ jobs:
     outputs:
       latest_tag: ${{ steps.version_info.outputs.latest_tag }}
       should_build: ${{ steps.should_build.outputs.should_build }}
+
     steps:
       - name: Get latest upstream version info
         id: version_info
-        run: >
-          data=$(curl -sL
-          https://api.github.com/repos/aseprite/aseprite/releases/latest)
-
+        run: |
+          data=$(curl -sL https://api.github.com/repos/aseprite/aseprite/releases/latest)
           latest_tag=$(echo "$data" | jq -r '.tag_name')
-
           echo "latest_tag=$latest_tag" >> $GITHUB_OUTPUT
-
           echo "Detected upstream version: $latest_tag"
+
       - name: Check if release exists in this repo
         id: should_build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: >
+        run: |
           LATEST_TAG="${{ steps.version_info.outputs.latest_tag }}"
-
-          if gh release view "$LATEST_TAG" --repo ${{ github.repository }} >
-          /dev/null 2>&1; then
+          if gh release view "$LATEST_TAG" --repo ${{ github.repository }} > /dev/null 2>&1; then
             echo "Version $LATEST_TAG already exists."
             echo "should_build=false" >> $GITHUB_OUTPUT
           else
             echo "Version $LATEST_TAG not found. Starting build."
             echo "should_build=true" >> $GITHUB_OUTPUT
           fi
-
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             echo "Manual trigger: Forcing build."
             echo "should_build=true" >> $GITHUB_OUTPUT
           fi
-build-aseprite:
-  name: Build Aseprite
-  needs: check-version
-  if: needs.check-version.outputs.should_build == 'true'
-  runs-on: windows-latest
-  timeout-minutes: 120
-  steps:
-    - name: Checkout Action
-      uses: actions/checkout@v4
-    - name: Setup MSVC
-      uses: ilammy/msvc-dev-cmd@v1
-      with:
-        arch: x64
-    - name: Get Ninja from cache
-      id: ninja-cache
-      uses: actions/cache@v4
-      with:
-        path: ninja
-        key: ninja-${{ env.NINJA_VERSION }}-windows
-    - name: Install Ninja
-      shell: bash
-      run: >
-        if [ "${{ steps.ninja-cache.outputs.cache-hit }}" != "true" ]; then
-          curl -L -o ninja.zip https://github.com/ninja-build/ninja/releases/download/v${{ env.NINJA_VERSION }}/ninja-win.zip
-          unzip ninja.zip -d ninja
-        fi
 
-        echo "${GITHUB_WORKSPACE}/ninja" >> $GITHUB_PATH
-    - name: Get sccache from cache
-      id: sccache-cache
-      uses: actions/cache@v4
-      with:
-        path: C:\Users\runneradmin\AppData\Local\Mozilla\sccache
-        key: sccache-aseprite-${{ runner.os }}-${{
-          needs.check-version.outputs.latest_tag }}
-        restore-keys: |
-          sccache-aseprite-${{ runner.os }}-
-    - name: Install sccache
-      shell: bash
-      run: >
-        curl -L -o sccache.tar.gz
-        https://github.com/mozilla/sccache/releases/download/v0.8.1/sccache-v0.8.1-x86_64-pc-windows-msvc.tar.gz
+  build-aseprite:
+    name: Build Aseprite
+    needs: check-version
+    if: needs.check-version.outputs.should_build == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 120
 
-        tar -xzf sccache.tar.gz
+    steps:
+      - name: Checkout Action
+        uses: actions/checkout@v4
 
-        mv sccache-v0.8.1-x86_64-pc-windows-msvc/sccache.exe
-        "${GITHUB_WORKSPACE}/ninja/"
-    - name: Get Skia from cache
-      id: skia-cache
-      uses: actions/cache@v4
-      with:
-        path: skia
-        key: skia-${{ env.SKIA_VERSION }}-windows-x64
-    - name: Download Skia if not in cache
-      if: steps.skia-cache.outputs.cache-hit != 'true'
-      shell: bash
-      run: >
-        curl -L -o Skia.zip
-        https://github.com/aseprite/skia/releases/download/${{ env.SKIA_VERSION
-        }}/Skia-Windows-Release-x64.zip
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
 
-        unzip Skia.zip -d skia
-    - name: Clone Aseprite Repository
-      shell: bash
-      run: >
-        git clone --recursive --shallow-submodules \
-          --branch ${{ needs.check-version.outputs.latest_tag }} \
-          --depth 1 \
-          https://github.com/aseprite/aseprite.git aseprite
-        cd aseprite
+      - name: Get Ninja from cache
+        id: ninja-cache
+        uses: actions/cache@v4
+        with:
+          path: ninja
+          key: ninja-${{ env.NINJA_VERSION }}-windows
 
-        git fetch origin --depth 1 \
-          refs/tags/${{ needs.check-version.outputs.latest_tag }}:refs/tags/${{ needs.check-version.outputs.latest_tag }}
-        mkdir -p build
-    - name: Build (Windows)
-      shell: cmd
-      working-directory: aseprite/build
-      run: |
-        cmake -G Ninja ^
-          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} ^
-          -DCMAKE_C_COMPILER_LAUNCHER=sccache ^
-          -DCMAKE_CXX_COMPILER_LAUNCHER=sccache ^
-          -DLAF_BACKEND=skia ^
-          -DSKIA_DIR="%GITHUB_WORKSPACE%/skia" ^
-          -DSKIA_LIBRARY_DIR="%GITHUB_WORKSPACE%/skia/out/Release-x64" ^
-          -DSKIA_LIBRARY="%GITHUB_WORKSPACE%/skia/out/Release-x64/skia.lib" ^
-          ..
-        ninja aseprite
-    - name: Copy OpenSSL DLLs
-      shell: cmd
-      run: >
-        if exist "C:\Program Files\OpenSSL\bin\libcrypto-3-x64.dll" (
-          xcopy "C:\Program Files\OpenSSL\bin\libcrypto-3-x64.dll" aseprite\build\bin\ /y
-          xcopy "C:\Program Files\OpenSSL\bin\libssl-3-x64.dll" aseprite\build\bin\ /y
-        ) else (
-          echo "ERROR: OpenSSL DLLs not found. Build cannot produce a working executable."
-          exit /b 1
-        )
-    - name: Package
-      working-directory: aseprite/build/bin
-      shell: bash
-      run: >
-        echo "# portable" > aseprite.ini
+      - name: Install Ninja
+        shell: bash
+        run: |
+          if [ "${{ steps.ninja-cache.outputs.cache-hit }}" != "true" ]; then
+            curl -L -o ninja.zip https://github.com/ninja-build/ninja/releases/download/v${{ env.NINJA_VERSION }}/ninja-win.zip
+            unzip ninja.zip -d ninja
+          fi
+          echo "${GITHUB_WORKSPACE}/ninja" >> $GITHUB_PATH
 
-        7z a "${GITHUB_WORKSPACE}/Aseprite-${{
-        needs.check-version.outputs.latest_tag }}-Windows.zip" *
-    - name: Create Release and Upload
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: ${{ needs.check-version.outputs.latest_tag }}
-        name: Aseprite ${{ needs.check-version.outputs.latest_tag }}
-        files: Aseprite-${{ needs.check-version.outputs.latest_tag }}-Windows.zip
-        draft: false
-        prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    - name: Notify Discord
-      if: always() && github.event_name != 'pull_request'
-      continue-on-error: true
-      uses: sarisia/actions-status-discord@v1
-      with:
-        webhook: ${{ secrets.DISCORD_WEBHOOK }}
-        status: ${{ job.status }}
-        title: Build Aseprite ${{ needs.check-version.outputs.latest_tag }}
-        description: "Build status: ${{ job.status }}"
-        color: ${{ job.status == 'success' && '0x00ff00' || '0xff0000' }}
-        username: Aseprite Builder
+      - name: Get sccache from cache
+        id: sccache-cache
+        uses: actions/cache@v4
+        with:
+          path: C:\Users\runneradmin\AppData\Local\Mozilla\sccache
+          key: sccache-aseprite-${{ runner.os }}-${{ needs.check-version.outputs.latest_tag }}
+          restore-keys: |
+            sccache-aseprite-${{ runner.os }}-
+
+      - name: Install sccache
+        shell: bash
+        run: |
+          curl -L -o sccache.tar.gz https://github.com/mozilla/sccache/releases/download/v0.8.1/sccache-v0.8.1-x86_64-pc-windows-msvc.tar.gz
+          tar -xzf sccache.tar.gz
+          mv sccache-v0.8.1-x86_64-pc-windows-msvc/sccache.exe "${GITHUB_WORKSPACE}/ninja/"
+
+      - name: Get Skia from cache
+        id: skia-cache
+        uses: actions/cache@v4
+        with:
+          path: skia
+          key: skia-${{ env.SKIA_VERSION }}-windows-x64
+
+      - name: Download Skia if not in cache
+        if: steps.skia-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          curl -L -o Skia.zip https://github.com/aseprite/skia/releases/download/${{ env.SKIA_VERSION }}/Skia-Windows-Release-x64.zip
+          unzip Skia.zip -d skia
+
+      - name: Clone Aseprite Repository
+        shell: bash
+        run: |
+          git clone --recursive --shallow-submodules \
+            --branch ${{ needs.check-version.outputs.latest_tag }} \
+            --depth 1 \
+            https://github.com/aseprite/aseprite.git aseprite
+          cd aseprite
+          git fetch origin --depth 1 \
+            refs/tags/${{ needs.check-version.outputs.latest_tag }}:refs/tags/${{ needs.check-version.outputs.latest_tag }}
+          mkdir -p build
+
+      - name: Build (Windows)
+        shell: cmd
+        working-directory: aseprite/build
+        run: |
+          cmake -G Ninja ^
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} ^
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache ^
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache ^
+            -DLAF_BACKEND=skia ^
+            -DSKIA_DIR="%GITHUB_WORKSPACE%/skia" ^
+            -DSKIA_LIBRARY_DIR="%GITHUB_WORKSPACE%/skia/out/Release-x64" ^
+            -DSKIA_LIBRARY="%GITHUB_WORKSPACE%/skia/out/Release-x64/skia.lib" ^
+            ..
+          ninja aseprite
+
+      - name: Copy OpenSSL DLLs
+        shell: cmd
+        run: |
+          if exist "C:\Program Files\OpenSSL\bin\libcrypto-3-x64.dll" (
+            xcopy "C:\Program Files\OpenSSL\bin\libcrypto-3-x64.dll" aseprite\build\bin\ /y
+            xcopy "C:\Program Files\OpenSSL\bin\libssl-3-x64.dll" aseprite\build\bin\ /y
+          ) else (
+            echo "ERROR: OpenSSL DLLs not found. Build cannot produce a working executable."
+            exit /b 1
+          )
+
+      - name: Package
+        working-directory: aseprite/build/bin
+        shell: bash
+        run: |
+          echo "# portable" > aseprite.ini
+          7z a "${GITHUB_WORKSPACE}/Aseprite-${{ needs.check-version.outputs.latest_tag }}-Windows.zip" *
+
+      - name: Create Release and Upload
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.check-version.outputs.latest_tag }}
+          name: Aseprite ${{ needs.check-version.outputs.latest_tag }}
+          files: Aseprite-${{ needs.check-version.outputs.latest_tag }}-Windows.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Notify Discord
+        if: always() && github.event_name != 'pull_request'
+        continue-on-error: true
+        uses: sarisia/actions-status-discord@v1
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          status: ${{ job.status }}
+          title: "Build Aseprite ${{ needs.check-version.outputs.latest_tag }}"
+          description: "Build status: ${{ job.status }}"
+          color: ${{ job.status == 'success' && '0x00ff00' || '0xff0000' }}
+          username: "Aseprite Builder"
