@@ -1,7 +1,7 @@
 name: Build and deploy Aseprite
 permissions:
   contents: write
-'on':
+on:
   schedule:
     - cron: 0 0 * * *
   push:
@@ -22,8 +22,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      latest_tag: '${{ steps.version_info.outputs.latest_tag }}'
-      should_build: '${{ steps.should_build.outputs.should_build }}'
+      latest_tag: ${{ steps.version_info.outputs.latest_tag }}
+      should_build: ${{ steps.should_build.outputs.should_build }}
     steps:
       - name: Get latest upstream version info
         id: version_info
@@ -39,7 +39,7 @@ jobs:
       - name: Check if release exists in this repo
         id: should_build
         env:
-          GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: >
           LATEST_TAG="${{ steps.version_info.outputs.latest_tag }}"
 
@@ -74,22 +74,22 @@ build-aseprite:
       uses: actions/cache@v4
       with:
         path: ninja
-        key: 'ninja-${{ env.NINJA_VERSION }}-windows'
+        key: ninja-${{ env.NINJA_VERSION }}-windows
     - name: Install Ninja
       shell: bash
-      run: |
+      run: >
         if [ "${{ steps.ninja-cache.outputs.cache-hit }}" != "true" ]; then
           curl -L -o ninja.zip https://github.com/ninja-build/ninja/releases/download/v${{ env.NINJA_VERSION }}/ninja-win.zip
           unzip ninja.zip -d ninja
         fi
+
         echo "${GITHUB_WORKSPACE}/ninja" >> $GITHUB_PATH
     - name: Get sccache from cache
       id: sccache-cache
       uses: actions/cache@v4
       with:
-        path: 'C:\Users\runneradmin\AppData\Local\Mozilla\sccache'
-        key: >-
-          sccache-aseprite-${{ runner.os }}-${{
+        path: C:\Users\runneradmin\AppData\Local\Mozilla\sccache
+        key: sccache-aseprite-${{ runner.os }}-${{
           needs.check-version.outputs.latest_tag }}
         restore-keys: |
           sccache-aseprite-${{ runner.os }}-
@@ -108,7 +108,7 @@ build-aseprite:
       uses: actions/cache@v4
       with:
         path: skia
-        key: 'skia-${{ env.SKIA_VERSION }}-windows-x64'
+        key: skia-${{ env.SKIA_VERSION }}-windows-x64
     - name: Download Skia if not in cache
       if: steps.skia-cache.outputs.cache-hit != 'true'
       shell: bash
@@ -120,12 +120,13 @@ build-aseprite:
         unzip Skia.zip -d skia
     - name: Clone Aseprite Repository
       shell: bash
-      run: |
+      run: >
         git clone --recursive --shallow-submodules \
           --branch ${{ needs.check-version.outputs.latest_tag }} \
           --depth 1 \
           https://github.com/aseprite/aseprite.git aseprite
         cd aseprite
+
         git fetch origin --depth 1 \
           refs/tags/${{ needs.check-version.outputs.latest_tag }}:refs/tags/${{ needs.check-version.outputs.latest_tag }}
         mkdir -p build
@@ -145,7 +146,7 @@ build-aseprite:
         ninja aseprite
     - name: Copy OpenSSL DLLs
       shell: cmd
-      run: |
+      run: >
         if exist "C:\Program Files\OpenSSL\bin\libcrypto-3-x64.dll" (
           xcopy "C:\Program Files\OpenSSL\bin\libcrypto-3-x64.dll" aseprite\build\bin\ /y
           xcopy "C:\Program Files\OpenSSL\bin\libssl-3-x64.dll" aseprite\build\bin\ /y
@@ -164,21 +165,21 @@ build-aseprite:
     - name: Create Release and Upload
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: '${{ needs.check-version.outputs.latest_tag }}'
-        name: 'Aseprite ${{ needs.check-version.outputs.latest_tag }}'
-        files: 'Aseprite-${{ needs.check-version.outputs.latest_tag }}-Windows.zip'
+        tag_name: ${{ needs.check-version.outputs.latest_tag }}
+        name: Aseprite ${{ needs.check-version.outputs.latest_tag }}
+        files: Aseprite-${{ needs.check-version.outputs.latest_tag }}-Windows.zip
         draft: false
         prerelease: false
       env:
-        GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     - name: Notify Discord
       if: always() && github.event_name != 'pull_request'
       continue-on-error: true
       uses: sarisia/actions-status-discord@v1
       with:
-        webhook: '${{ secrets.DISCORD_WEBHOOK }}'
-        status: '${{ job.status }}'
-        title: 'Build Aseprite ${{ needs.check-version.outputs.latest_tag }}'
-        description: 'Build status: ${{ job.status }}'
-        color: '${{ job.status == ''success'' && ''0x00ff00'' || ''0xff0000'' }}'
+        webhook: ${{ secrets.DISCORD_WEBHOOK }}
+        status: ${{ job.status }}
+        title: Build Aseprite ${{ needs.check-version.outputs.latest_tag }}
+        description: "Build status: ${{ job.status }}"
+        color: ${{ job.status == 'success' && '0x00ff00' || '0xff0000' }}
         username: Aseprite Builder
