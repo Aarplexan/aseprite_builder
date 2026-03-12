@@ -19,13 +19,14 @@ env:
   BUILD_TYPE: Release
   SKIA_VERSION: m124-08a5439a6b
   NINJA_VERSION: 1.12.1
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   check-version:
     name: Check latest Aseprite release
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
     outputs:
       latest_tag: ${{ steps.version_info.outputs.latest_tag }}
       should_build: ${{ steps.should_build.outputs.should_build }}
@@ -63,6 +64,8 @@ jobs:
     if: needs.check-version.outputs.should_build == 'true'
     runs-on: windows-latest
     timeout-minutes: 120
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
     steps:
       - name: Checkout Action
@@ -129,6 +132,10 @@ jobs:
           cd aseprite
           git fetch origin --depth 1 \
             refs/tags/${{ needs.check-version.outputs.latest_tag }}:refs/tags/${{ needs.check-version.outputs.latest_tag }}
+          echo "=== Git describe (must NOT say -dev) ==="
+          git describe --tags --exact-match || echo "WARNING: tag not resolved, version will show as -dev"
+          echo "=== All local tags ==="
+          git tag -l
           mkdir -p build
 
       - name: Build (Windows)
