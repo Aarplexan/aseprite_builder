@@ -95,8 +95,12 @@ jobs:
       - name: Clone Aseprite Repository
         shell: bash
         run: |
-          git clone --recursive --branch ${{ needs.check-version.outputs.latest_tag }} https://github.com/aseprite/aseprite.git aseprite
-          mkdir -p aseprite/build
+          git clone --recursive --branch ${{ needs.check-version.outputs.latest_tag }} \
+          --depth 1 \
+          https://github.com/aseprite/aseprite.git aseprite
+          cd aseprite
+          git fetch --tags --depth 1  # ← this line ensures the tag is visible
+          mkdir -p build
 
       - name: Build (Windows)
         shell: cmd
@@ -109,7 +113,6 @@ jobs:
             -DSKIA_LIBRARY_DIR="%GITHUB_WORKSPACE%/skia/out/Release-x64" ^
             -DSKIA_LIBRARY="%GITHUB_WORKSPACE%/skia/out/Release-x64/skia.lib" ^
             -DOPENGL_LIBRARY="opengl32" ^
-            -DCUSTOM_VERSION="${{ needs.check-version.outputs.latest_tag }}" ^
             ..
           ninja aseprite
 
