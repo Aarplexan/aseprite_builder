@@ -122,21 +122,13 @@ jobs:
           curl -L -o Skia.zip https://github.com/aseprite/skia/releases/download/${{ env.SKIA_VERSION }}/Skia-Windows-Release-x64.zip
           unzip Skia.zip -d skia
 
-      - name: Clone Aseprite Repository
+      - name: Download Aseprite Source
         shell: bash
         run: |
-          git clone --recursive --shallow-submodules \
-            --branch ${{ needs.check-version.outputs.latest_tag }} \
-            --depth 1 \
-            https://github.com/aseprite/aseprite.git aseprite
-          cd aseprite
-          git fetch origin --depth 1 \
-            refs/tags/${{ needs.check-version.outputs.latest_tag }}:refs/tags/${{ needs.check-version.outputs.latest_tag }}
-          echo "=== Git describe (must NOT say -dev) ==="
-          git describe --tags --exact-match || echo "WARNING: tag not resolved, version will show as -dev"
-          echo "=== All local tags ==="
-          git tag -l
-          mkdir -p build
+          TAG=${{ needs.check-version.outputs.latest_tag }}
+          curl -L -o aseprite-source.zip https://github.com/aseprite/aseprite/releases/download/${TAG}/Aseprite-${TAG}-Source.zip
+          unzip aseprite-source.zip -d aseprite
+          mkdir -p aseprite/build
 
       - name: Build (Windows)
         shell: cmd
