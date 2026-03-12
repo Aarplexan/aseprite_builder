@@ -57,7 +57,7 @@ jobs:
             echo "should_build=true" >> $GITHUB_OUTPUT
           fi
 
-  build-aseprite:
+build-aseprite:
     name: Build Aseprite
     needs: check-version
     if: needs.check-version.outputs.should_build == 'true'
@@ -72,11 +72,6 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
-
-      - name: Setup sccache
-        uses: mozilla-actions/sccache-action@v0.0.9
-        with:
-          version: "v0.8.1"
 
       - name: Get Ninja from cache
         id: ninja-cache
@@ -93,6 +88,22 @@ jobs:
             unzip ninja.zip -d ninja
           fi
           echo "${GITHUB_WORKSPACE}/ninja" >> $GITHUB_PATH
+
+      - name: Get sccache from cache
+        id: sccache-cache
+        uses: actions/cache@v4
+        with:
+          path: C:\Users\runneradmin\AppData\Local\Mozilla\sccache
+          key: sccache-aseprite-${{ runner.os }}-${{ needs.check-version.outputs.latest_tag }}
+          restore-keys: |
+            sccache-aseprite-${{ runner.os }}-
+
+      - name: Install sccache
+        shell: bash
+        run: |
+          curl -L -o sccache.tar.gz https://github.com/mozilla/sccache/releases/download/v0.8.1/sccache-v0.8.1-x86_64-pc-windows-msvc.tar.gz
+          tar -xzf sccache.tar.gz
+          mv sccache-v0.8.1-x86_64-pc-windows-msvc/sccache.exe "${GITHUB_WORKSPACE}/ninja/"
 
       - name: Get Skia from cache
         id: skia-cache
@@ -123,8 +134,6 @@ jobs:
       - name: Build (Windows)
         shell: cmd
         working-directory: aseprite/build
-        env:
-          SCCACHE_GHA_ENABLED: "true"
         run: |
           cmake -G Ninja ^
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} ^
