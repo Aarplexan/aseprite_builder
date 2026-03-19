@@ -125,8 +125,7 @@ jobs:
       - name: Download Aseprite Source
         shell: bash
         run: |
-          TAG=${{ needs.check-version.outputs.latest_tag }}
-          curl -L -o aseprite-source.zip https://github.com/aseprite/aseprite/releases/download/${TAG}/Aseprite-${TAG}-Source.zip
+          curl -L -o aseprite-source.zip "https://github.com/aseprite/aseprite/releases/download/${{ needs.check-version.outputs.latest_tag }}/Aseprite-${{ needs.check-version.outputs.latest_tag }}-Source.zip"
           unzip aseprite-source.zip -d aseprite
           mkdir -p aseprite/build
 
