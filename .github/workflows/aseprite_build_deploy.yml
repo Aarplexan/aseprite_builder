@@ -63,7 +63,7 @@ jobs:
     needs: check-version
     if: needs.check-version.outputs.should_build == 'true'
     runs-on: windows-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
@@ -90,7 +90,7 @@ jobs:
             curl -L -o ninja.zip https://github.com/ninja-build/ninja/releases/download/v${{ env.NINJA_VERSION }}/ninja-win.zip
             unzip ninja.zip -d ninja
           fi
-          echo "${GITHUB_WORKSPACE}/ninja" >> $GITHUB_PATH
+          echo "${GITHUB_WORKSPACE}/ninja" >> "${GITHUB_PATH}"
 
       - name: Get sccache from cache
         id: sccache-cache
@@ -104,9 +104,10 @@ jobs:
       - name: Install sccache
         shell: bash
         run: |
-          curl -L -o sccache.tar.gz https://github.com/mozilla/sccache/releases/download/v0.8.1/sccache-v0.8.1-x86_64-pc-windows-msvc.tar.gz
+          SCCACHE_URL="https://github.com/mozilla/sccache/releases/download/v0.8.3/sccache-v0.8.3-x86_64-pc-windows-msvc.tar.gz"
+          curl -L -o sccache.tar.gz "$SCCACHE_URL"
           tar -xzf sccache.tar.gz
-          mv sccache-v0.8.1-x86_64-pc-windows-msvc/sccache.exe "${GITHUB_WORKSPACE}/ninja/"
+          mv sccache-v0.8.3-x86_64-pc-windows-msvc/sccache.exe "${GITHUB_WORKSPACE}/ninja/"
 
       - name: Get Skia from cache
         id: skia-cache
@@ -129,7 +130,7 @@ jobs:
           unzip aseprite-source.zip -d aseprite
           mkdir -p aseprite/build
 
-      - name: Build (Windows)
+      - name: Configure CMake (Windows)
         shell: cmd
         working-directory: aseprite/build
         run: |
@@ -142,16 +143,29 @@ jobs:
             -DSKIA_LIBRARY_DIR="%GITHUB_WORKSPACE%/skia/out/Release-x64" ^
             -DSKIA_LIBRARY="%GITHUB_WORKSPACE%/skia/out/Release-x64/skia.lib" ^
             ..
+
+      - name: Build with Ninja (Windows)
+        shell: cmd
+        working-directory: aseprite/build
+        run: |
           ninja aseprite
 
       - name: Copy OpenSSL DLLs
         shell: cmd
         run: |
-          if exist "C:\Program Files\OpenSSL\bin\libcrypto-3-x64.dll" (
-            xcopy "C:\Program Files\OpenSSL\bin\libcrypto-3-x64.dll" aseprite\build\bin\ /y
-            xcopy "C:\Program Files\OpenSSL\bin\libssl-3-x64.dll" aseprite\build\bin\ /y
-          ) else (
-            echo "ERROR: OpenSSL DLLs not found. Build cannot produce a working executable."
+          SET "OPENSSL_DIR=C:\Program Files\OpenSSL-Win64\bin"
+          IF NOT EXIST "%OPENSSL_DIR%" SET "OPENSSL_DIR=C:\Program Files\OpenSSL\bin"
+          
+          IF EXIST "%OPENSSL_DIR%\libcrypto-3-x64.dll" (
+            xcopy "%OPENSSL_DIR%\libcrypto-3-x64.dll" aseprite\build\bin\ /y
+            xcopy "%OPENSSL_DIR%\libssl-3-x64.dll" aseprite\build\bin\ /y
+          ) ELSE IF EXIST "%OPENSSL_DIR%\libcrypto-1_1-x64.dll" (
+            xcopy "%OPENSSL_DIR%\libcrypto-1_1-x64.dll" aseprite\build\bin\ /y
+            xcopy "%OPENSSL_DIR%\libssl-1_1-x64.dll" aseprite\build\bin\ /y
+          ) ELSE (
+            echo "WARNING: OpenSSL DLLs not found in standard locations. Trying to find them..."
+            where libcrypto* > openssl_paths.txt 2>&1 || true
+            type openssl_paths.txt
             exit /b 1
           )
 
